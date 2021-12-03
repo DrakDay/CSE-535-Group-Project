@@ -11,7 +11,13 @@ public class Client_manage {
         client_manager.add(new client(ip));
     }
     public void delete(int index){
-        client_manager.remove(index);
+        if(index >= client_manager.size()){
+            return;
+        }else if(index < 0){
+            return ;
+        }else {
+            client_manager.remove(index);
+        }
     }
 
     public int index(String ip){
@@ -46,7 +52,8 @@ class client{
     public String IP;
     public int battery_level;
     public boolean participate = false;
-
+    public double longitude = 0.0;
+    public double latitude = 0.0;
 
     public client(String ip){
         IP = ip;

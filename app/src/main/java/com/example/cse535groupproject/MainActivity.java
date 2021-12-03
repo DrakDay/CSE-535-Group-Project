@@ -34,11 +34,10 @@ import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
-    private int battery_level;
-
     // data section
     Client_manage client_manage = new Client_manage();
     private int n_client = 0;
+    private int battery_level;
 
     //setting up a server
     private ServerSocket serverSocket;
@@ -55,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
     TextView number_of_non_participate_client;
     Button confirm_participation;
     Button start_matrix_computation;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -99,6 +100,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.i("TAG", i.IP );
                     Log.i("TAG", String.valueOf(i.battery_level));
                     Log.i("TAG", String.valueOf(i.participate));
+                    Log.i("TAG", String.valueOf(i.latitude) + ' ' + String.valueOf(i.longitude));
                 }
             }
         });
@@ -137,7 +139,6 @@ public class MainActivity extends AppCompatActivity {
             if (null != serverSocket) {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
-
                         socket = serverSocket.accept();
                         n_client ++;
                         runOnUiThread(new Runnable() {
@@ -189,16 +190,18 @@ public class MainActivity extends AppCompatActivity {
                             @Override
                             public void run() {
                                 n_client_view.setText("Number of Client: " + Integer.toString(n_client));
+                                update_participation();
                             }
                         });
 
                         Log.i("TAG", "Client : (most time is Client Disconnected )" + message);
-                        client_manage.delete(client_manage.index(message.split(":")[1]));
+                        if(client_manage.client_manager.size() != 0){
+                            client_manage.delete(client_manage.index(message.split(":")[1]));
+                        }
                         break;
                     }
                     Log.i("TAG", "Client:" + message);
                     request_handler(message);
-
 
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -213,8 +216,6 @@ public class MainActivity extends AppCompatActivity {
 
         if(msg.startsWith("IP")){
             String ip = msg.split(":")[1];
-
-
             client_manage.add(ip);
         }
         //see how many client want practice
@@ -231,6 +232,14 @@ public class MainActivity extends AppCompatActivity {
             String ip = msg.split(":")[1];
             client_manage.set_participate(client_manage.index(ip),false);
             update_participation();
+        }
+        if(msg.startsWith("Lat")){
+            String[] split_msg = msg.split(",");
+            Double lat = Double.parseDouble(split_msg[0].split(":")[1]);
+            Double lon = Double.parseDouble(split_msg[1].split(":")[1]);
+            String ip = split_msg[2].split(":")[1];
+            client_manage.client_manager.get(client_manage.index(ip)).latitude = lat;
+            client_manage.client_manager.get(client_manage.index(ip)).longitude = lon;
         }
 
 
