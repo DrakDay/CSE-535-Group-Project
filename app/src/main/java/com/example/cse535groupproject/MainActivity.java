@@ -11,6 +11,8 @@ import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -28,23 +30,19 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
     private int battery_level;
 
-    // battery level check
-    private BroadcastReceiver batterylevelReciver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            battery_level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
-            Log.i("TAG", "battery level: " + Integer.toString(battery_level));
-        }
-    };
+    // data section
+    Client_manage client_manage = new Client_manage();
+    private int n_client = 0;
 
     //setting up a server
     private ServerSocket serverSocket;
-    private Socket tempClientSocket;
+    ArrayList<Socket> tempClientSockets = new ArrayList<Socket>();
     Thread serverThread = null;
     public static String SERVER_IP = "";
     public static final int SERVER_PORT = 8888;
@@ -52,12 +50,23 @@ public class MainActivity extends AppCompatActivity {
 
     //ui element
     TextView server_ip_address;
-
+    TextView n_client_view;
+    TextView number_of_participate_client;
+    TextView number_of_non_participate_client;
+    Button confirm_participation;
+    Button start_matrix_computation;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        //ui
         server_ip_address = findViewById(R.id.server_ip_address);
+        n_client_view = findViewById(R.id.N_client);
+        number_of_participate_client = findViewById(R.id.client_participate);
+        number_of_non_participate_client = findViewById(R.id.clien_not_participate);
+        confirm_participation = findViewById(R.id.confirm_participation);
+        start_matrix_computation = findViewById(R.id.send_matrix);
 
         //listening batter level check
         this.registerReceiver(this.batterylevelReciver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -75,17 +84,34 @@ public class MainActivity extends AppCompatActivity {
         this.serverThread = new Thread(new ServerThread());
         this.serverThread.start();
 
-        //testing sending msg to client
-        /*
-        int i = 0;
-        while(true){
-            sendMessage(Integer.toString(i));
-            Log.i("TAG", "send :" + Integer.toString(i));
-            i++;
-        }
-         */
 
+        confirm_participation.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                sendMessage("participate");
+            }
+        });
+
+        start_matrix_computation.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                for(client i : client_manage.client_manager){
+                    Log.i("TAG", i.IP );
+                    Log.i("TAG", String.valueOf(i.battery_level));
+                    Log.i("TAG", String.valueOf(i.participate));
+                }
+            }
+        });
     }
+
+    // battery level check
+    private BroadcastReceiver batterylevelReciver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            battery_level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
+            Log.i("TAG", "battery level: " + Integer.toString(battery_level));
+        }
+    };
 
     // get master local ip address
     private String getLocalIPaddress() throws UnknownHostException{
@@ -111,7 +137,16 @@ public class MainActivity extends AppCompatActivity {
             if (null != serverSocket) {
                 while (!Thread.currentThread().isInterrupted()) {
                     try {
+
                         socket = serverSocket.accept();
+                        n_client ++;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                n_client_view.setText("Number of Client: " + Integer.toString(n_client));
+                            }
+                        });
+
                         CommunicationThread commThread = new CommunicationThread(socket);
                         new Thread(commThread).start();
                     } catch (IOException e) {
@@ -131,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
 
         public CommunicationThread(Socket clientSocket) {
             this.clientSocket = clientSocket;
-            tempClientSocket = clientSocket;
+            tempClientSockets.add(clientSocket);
             try {
                 this.input = new BufferedReader(new InputStreamReader(this.clientSocket.getInputStream()));
             } catch (IOException e) {
@@ -147,13 +182,24 @@ public class MainActivity extends AppCompatActivity {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     String message = input.readLine();
-                    if (null == message || "Disconnect".contentEquals(message)) {
+                    if (null == message || message.contains("Disconnect")) {
                         Thread.interrupted();
-                        message = "Client Disconnected";
+                        n_client --;
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                n_client_view.setText("Number of Client: " + Integer.toString(n_client));
+                            }
+                        });
+
                         Log.i("TAG", "Client : (most time is Client Disconnected )" + message);
+                        client_manage.delete(client_manage.index(message.split(":")[1]));
                         break;
                     }
                     Log.i("TAG", "Client:" + message);
+                    request_handler(message);
+
+
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -163,28 +209,69 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    public void request_handler(String msg){
+
+        if(msg.startsWith("IP")){
+            String ip = msg.split(":")[1];
+
+
+            client_manage.add(ip);
+        }
+        //see how many client want practice
+        if(msg.startsWith("YES")){
+            String[] split_msg = msg.split(",");
+            String ip = split_msg[0].split(":")[1];
+            String bl = split_msg[1].split(":")[1];
+            Log.i("TAG", ip+ " " + bl);
+            client_manage.set_participate(client_manage.index(ip),true);
+            client_manage.client_manager.get(client_manage.index(ip)).set_battery_lvl(Integer.parseInt(bl));
+            update_participation();
+        }
+        if(msg.startsWith("NO")){
+            String ip = msg.split(":")[1];
+            client_manage.set_participate(client_manage.index(ip),false);
+            update_participation();
+        }
+
+
+    }
+    public void update_participation(){
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                int n = client_manage.get_number_of_participate_client();
+                number_of_participate_client.setText("Client participate: " +Integer.toString(n));
+                number_of_non_participate_client.setText("Client not participate: " + Integer.toString(n_client - n));
+            }
+        });
+    }
+
     private void sendMessage(final String message) {
         try {
-            if (null != tempClientSocket) {
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        PrintWriter out = null;
-                        try {
-                            out = new PrintWriter(new BufferedWriter(
-                                    new OutputStreamWriter(tempClientSocket.getOutputStream())),
-                                    true);
-                        } catch (IOException e) {
-                            e.printStackTrace();
+            for(Socket i: tempClientSockets){
+
+                if (null != i) {
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            PrintWriter out = null;
+                            try {
+                                out = new PrintWriter(new BufferedWriter(
+                                        new OutputStreamWriter(i.getOutputStream())),
+                                        true);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            out.println(message);
                         }
-                        out.println(message);
-                    }
-                }).start();
+                    }).start();
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
+
 
     @Override
     protected void onDestroy() {
