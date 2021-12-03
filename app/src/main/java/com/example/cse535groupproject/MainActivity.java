@@ -31,6 +31,7 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -46,6 +47,7 @@ public class MainActivity extends AppCompatActivity {
     public static String SERVER_IP = "";
     public static final int SERVER_PORT = 8888;
 
+    public int[][] matrixResult = new int[2][2]; //CHANGE TO MATCH SIZE OF MATRICES USED
 
     //ui element
     TextView server_ip_address;
@@ -96,11 +98,55 @@ public class MainActivity extends AppCompatActivity {
         start_matrix_computation.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                int[][] matrix1 = MatrixValues.matrix1;
+                int[][] matrix2 = MatrixValues.matrix2;
+
+                int[][][] splitMatrices = getSplits(matrix1, matrix2);
+
+                int splitIndex = 0;
+                String message = "";
+
                 for(client i : client_manage.client_manager){
                     Log.i("TAG", i.IP );
                     Log.i("TAG", String.valueOf(i.battery_level));
                     Log.i("TAG", String.valueOf(i.participate));
                     Log.i("TAG", String.valueOf(i.latitude) + ' ' + String.valueOf(i.longitude));
+
+                    if (i.participate == true) {
+                        int[][] clientMatrix1 = splitMatrices[splitIndex];
+                        int[][] clientMatrix2 = splitMatrices[2];
+
+
+                        message += "IP:" + i.IP + ",";
+
+                        // Copy first matrix
+                        for(int rowIndex = 0; rowIndex < clientMatrix1.length; rowIndex++) {
+                            for(int columnIndex = 0; columnIndex < clientMatrix1[0].length; columnIndex++) {
+                                message += Integer.toString(clientMatrix1[rowIndex][columnIndex]);
+                                if (columnIndex != clientMatrix1[0].length-1)
+                                    message += "@";
+                            }
+                            if (rowIndex != clientMatrix1.length-1)
+                                message += ".";
+                        }
+
+                        // Copy second matrix
+                        message += ",";
+                        for(int rowIndex = 0; rowIndex < clientMatrix2.length; rowIndex++) {
+                            for(int columnIndex = 0; columnIndex < clientMatrix2[0].length; columnIndex++) {
+                                message += Integer.toString(clientMatrix2[rowIndex][columnIndex]);
+                                if (columnIndex != clientMatrix2[0].length-1)
+                                    message += "@";
+                            }
+                            if (rowIndex != clientMatrix2.length-1)
+                                message += ".";
+                        }
+
+                        message += "," + splitIndex;
+                        sendMessage(message);
+                        Log.i("MESSAGE", message);
+                        splitIndex++;
+                    }
                 }
             }
         });
@@ -242,6 +288,17 @@ public class MainActivity extends AppCompatActivity {
             client_manage.client_manager.get(client_manage.index(ip)).longitude = lon;
         }
 
+        if(msg.startsWith("RESULT")) {
+            Log.i("TEST", msg);
+            String[] splitMessage = msg.split(",");
+            int index = Integer.valueOf(splitMessage[3]);
+
+            String[] tempResult = splitMessage[2].split("@");
+
+            for (int i = 0; i < tempResult.length; i++) {
+                    matrixResult[index][i] = Integer.valueOf(tempResult[i]);
+                }
+        }
 
     }
     public void update_participation(){
@@ -289,5 +346,50 @@ public class MainActivity extends AppCompatActivity {
             serverThread.interrupt();
             serverThread = null;
         }
+    }
+
+
+    // This method splits two matrices into 4 matrices
+    // This works for two clients which is what we'll be using it for
+    // Returns a list of 2-D matrices: The first two go to client 1, the next to go to client 2
+    public static int[][][] getSplits(int[][] matrix1, int[][] matrix2) {
+        int[][] m1 = new int[matrix1.length/2][matrix1[0].length];
+        int[][] m2 = new int[matrix1.length/2][matrix1[0].length];
+        int[][] m3 = new int[matrix2.length][matrix2[0].length];
+
+        for (int i = 0; i < matrix1.length/2; i++) {
+            for (int j = 0; j < matrix1.length; j++) {
+                m1[i][j] = matrix1[i][j];
+                m2[i][j] = matrix1[i+matrix1.length/2][j];
+            }
+        }
+
+        for (int i = 0; i < matrix2.length; i++)
+            for (int j =0; j < matrix2[0].length; j++)
+                m3[i][j] = matrix2[i][j];
+
+        int[][][] result = new int[3][][];
+        result[0] = m1;
+        result[1] = m2;
+        result[2] = m3;
+        return result;
+    }
+
+    // Method for multiplying two matrices together
+    public static int[][] multiplyMatrices(int[][] matrix1, int[][] matrix2) {
+        int[][] result = new int[matrix1.length][matrix2[0].length];
+        if (matrix1[0].length != matrix2.length)
+            System.out.println("ERROR: Dimensions of matrices do not match!");
+        else {
+            for (int i = 0; i < matrix1.length; i++) {
+                for (int j = 0; j < matrix2[0].length; j++) {
+                    result[i][j] = 0;
+                    for (int k = 0; k < matrix1[0].length; k++) {
+                        result[i][j] += matrix1[i][k] * matrix2[k][j];
+                    }
+                }
+            }
+        }
+        return result;
     }
 }
