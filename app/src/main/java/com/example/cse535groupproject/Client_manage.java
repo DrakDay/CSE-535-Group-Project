@@ -1,6 +1,7 @@
 package com.example.cse535groupproject;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 
 public class Client_manage {
 
@@ -8,14 +9,13 @@ public class Client_manage {
 
 
     public void add(String ip){
+
         client_manager.add(new client(ip));
     }
     public void delete(int index){
-        if(index >= client_manager.size()){
+        if (index == -1){
             return;
-        }else if(index < 0){
-            return ;
-        }else {
+        }else{
             client_manager.remove(index);
         }
     }
@@ -37,14 +37,22 @@ public class Client_manage {
     public int get_number_of_participate_client() {
         int ans = 0;
         for (int i = 0; i < client_manager.size(); i++) {
-            if (client_manager.get(i).participate == true) {
+            if (client_manager.get(i).participate) {
                 ans++;
             }
         }
         return ans;
     }
 
-
+    public int get_number_of_working_client() {
+        int ans = 0;
+        for (int i = 0; i < client_manager.size(); i++) {
+            if (client_manager.get(i).participate) {
+                ans++;
+            }
+        }
+        return ans;
+    }
 }
 
 class client{
@@ -54,6 +62,7 @@ class client{
     public boolean participate = false;
     public double longitude = 0.0;
     public double latitude = 0.0;
+    public boolean working = false;
 
     public client(String ip){
         IP = ip;

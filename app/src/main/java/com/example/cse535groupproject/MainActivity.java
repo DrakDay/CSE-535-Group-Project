@@ -1,11 +1,14 @@
 package com.example.cse535groupproject;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
@@ -32,13 +35,23 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity<hashMap> extends AppCompatActivity {
 
     // data section
     Client_manage client_manage = new Client_manage();
+    location_finder loc_finder;
     private int n_client = 0;
     private int battery_level;
+    private  boolean computation_state = false;
+
+
+    public int[][] matrixResult = new int[2][2]; //CHANGE TO MATCH SIZE OF MATRICES USED
+    HashMap<String,int[][] > hash_map1 = new HashMap<String, int[][]>();
+    HashMap<String,int[][] > hash_map2 = new HashMap<String, int[][]>();
+    HashMap<String,Integer> client_split_index = new HashMap<String,Integer>();
+    HashMap<String, Boolean> client_alive = new HashMap<String, Boolean>();
 
     //setting up a server
     private ServerSocket serverSocket;
@@ -47,8 +60,6 @@ public class MainActivity extends AppCompatActivity {
     public static String SERVER_IP = "";
     public static final int SERVER_PORT = 8888;
 
-    public int[][] matrixResult = new int[2][2]; //CHANGE TO MATCH SIZE OF MATRICES USED
-
     //ui element
     TextView server_ip_address;
     TextView n_client_view;
@@ -56,7 +67,6 @@ public class MainActivity extends AppCompatActivity {
     TextView number_of_non_participate_client;
     Button confirm_participation;
     Button start_matrix_computation;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,14 +81,24 @@ public class MainActivity extends AppCompatActivity {
         confirm_participation = findViewById(R.id.confirm_participation);
         start_matrix_computation = findViewById(R.id.send_matrix);
 
+        //get permission
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_NETWORK_STATE}, 1);
+        }
+
         //listening batter level check
         this.registerReceiver(this.batterylevelReciver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 
-
+        loc_finder = new location_finder(this);
+        Log.i("TAG",loc_finder.get_latitude() + " " + loc_finder.get_longitude());
         //set up server ip
         try{
             SERVER_IP = getLocalIPaddress();
-            server_ip_address.setText("master server ip address : " + SERVER_IP);
+            String masterip = "master server ip address : " + SERVER_IP;
+            server_ip_address.setText(masterip);
         } catch (UnknownHostException e){
             e.printStackTrace();
         }
@@ -86,6 +106,7 @@ public class MainActivity extends AppCompatActivity {
         //starting server
         this.serverThread = new Thread(new ServerThread());
         this.serverThread.start();
+
 
 
         confirm_participation.setOnClickListener(new View.OnClickListener() {
@@ -98,6 +119,7 @@ public class MainActivity extends AppCompatActivity {
         start_matrix_computation.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                computation_state = true;
                 int[][] matrix1 = MatrixValues.matrix1;
                 int[][] matrix2 = MatrixValues.matrix2;
 
@@ -110,13 +132,21 @@ public class MainActivity extends AppCompatActivity {
                     Log.i("TAG", i.IP );
                     Log.i("TAG", String.valueOf(i.battery_level));
                     Log.i("TAG", String.valueOf(i.participate));
-                    Log.i("TAG", String.valueOf(i.latitude) + ' ' + String.valueOf(i.longitude));
+                    Log.i("TAG", String.valueOf(i.latitude) + ' ' + i.longitude);
 
-                    if (i.participate == true) {
+                    Double lat_diff = Math.abs(loc_finder.get_latitude() - i.latitude);
+                    Double lon_diff = Math.abs(loc_finder.get_longitude() - i.longitude);
+                    // && lat_diff < 0.0005 && lon_diff < 0.0005
+
+                    if (i.participate && i.battery_level >= 20) {
                         int[][] clientMatrix1 = splitMatrices[splitIndex];
                         int[][] clientMatrix2 = splitMatrices[2];
 
+                        hash_map1.put(i.IP,clientMatrix1);
+                        hash_map2.put(i.IP,clientMatrix2);
+                        client_split_index.put(i.IP,splitIndex);
 
+                        client_manage.client_manager.get(client_manage.index(i.IP)).working = true;
                         message += "IP:" + i.IP + ",";
 
                         // Copy first matrix
@@ -143,8 +173,11 @@ public class MainActivity extends AppCompatActivity {
                         }
 
                         message += "," + splitIndex;
+
+
                         sendMessage(message);
-                        Log.i("MESSAGE", message);
+
+                        Log.i("TAG", message);
                         splitIndex++;
                     }
                 }
@@ -157,7 +190,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             battery_level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, 0);
-            Log.i("TAG", "battery level: " + Integer.toString(battery_level));
+            //Log.i("TAG", "battery level: " + Integer.toString(battery_level));
         }
     };
 
@@ -190,7 +223,8 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                n_client_view.setText("Number of Client: " + Integer.toString(n_client));
+                                String temp = "Number of Client: " + n_client;
+                                n_client_view.setText(temp);
                             }
                         });
 
@@ -235,15 +269,23 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                n_client_view.setText("Number of Client: " + Integer.toString(n_client));
+                                String temp = "Number of Client: " + n_client;
+                                n_client_view.setText(temp);
                                 update_participation();
                             }
                         });
 
                         Log.i("TAG", "Client : (most time is Client Disconnected )" + message);
-                        if(client_manage.client_manager.size() != 0){
-                            client_manage.delete(client_manage.index(message.split(":")[1]));
+                        if(message != null) {
+                            int index = client_manage.index(message.split(":")[1]);
+                            client_manage.delete(index);
+                        }else{
+                            //client failed,
+                            if (computation_state) {
+                                failure_recovery();
+                            }
                         }
+
                         break;
                     }
                     Log.i("TAG", "Client:" + message);
@@ -263,6 +305,7 @@ public class MainActivity extends AppCompatActivity {
         if(msg.startsWith("IP")){
             String ip = msg.split(":")[1];
             client_manage.add(ip);
+            Log.i("TAG", String.valueOf(client_manage.client_manager.size()));
         }
         //see how many client want practice
         if(msg.startsWith("YES")){
@@ -270,44 +313,81 @@ public class MainActivity extends AppCompatActivity {
             String ip = split_msg[0].split(":")[1];
             String bl = split_msg[1].split(":")[1];
             Log.i("TAG", ip+ " " + bl);
-            client_manage.set_participate(client_manage.index(ip),true);
-            client_manage.client_manager.get(client_manage.index(ip)).set_battery_lvl(Integer.parseInt(bl));
-            update_participation();
+            if (client_manage.index(ip) != -1) {
+                client_manage.set_participate(client_manage.index(ip), true);
+                client_manage.client_manager.get(client_manage.index(ip)).set_battery_lvl(Integer.parseInt(bl));
+                update_participation();
+            }
         }
         if(msg.startsWith("NO")){
             String ip = msg.split(":")[1];
-            client_manage.set_participate(client_manage.index(ip),false);
-            update_participation();
+            if (client_manage.index(ip) != -1) {
+                client_manage.set_participate(client_manage.index(ip), false);
+                update_participation();
+            }
         }
+
         if(msg.startsWith("Lat")){
             String[] split_msg = msg.split(",");
             Double lat = Double.parseDouble(split_msg[0].split(":")[1]);
             Double lon = Double.parseDouble(split_msg[1].split(":")[1]);
             String ip = split_msg[2].split(":")[1];
-            client_manage.client_manager.get(client_manage.index(ip)).latitude = lat;
-            client_manage.client_manager.get(client_manage.index(ip)).longitude = lon;
+            if (client_manage.index(ip) != -1) {
+                client_manage.client_manager.get(client_manage.index(ip)).latitude = lat;
+                client_manage.client_manager.get(client_manage.index(ip)).longitude = lon;
+            }
         }
 
         if(msg.startsWith("RESULT")) {
             Log.i("TEST", msg);
-            String[] splitMessage = msg.split(",");
-            int index = Integer.valueOf(splitMessage[3]);
 
-            String[] tempResult = splitMessage[2].split("@");
+            String ip = msg.split(",")[1].split(":")[1];
+            client_manage.client_manager.get(client_manage.index(ip)).working = false;
+            hash_map1.remove(ip);
+            hash_map2.remove(ip);
+            client_split_index.remove(ip);
 
-            for (int i = 0; i < tempResult.length; i++) {
-                    matrixResult[index][i] = Integer.valueOf(tempResult[i]);
-                }
+
+            //all client finish matrix
+            if(client_manage.get_number_of_working_client() == 0){
+                computation_state = false;
+
+            }
         }
 
+
+
     }
+
+    public void failure_recovery(){
+
+        //get available client
+        for(client i: client_manage.client_manager){
+            if(!i.working){
+                if(client_split_index.get(i.IP) != null){
+                    send_matrix_client(i.IP, client_split_index.get(i.IP));
+                }
+            }
+        }
+
+
+    }
+
     public void update_participation(){
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                String temp = "",temp2 = "";
                 int n = client_manage.get_number_of_participate_client();
-                number_of_participate_client.setText("Client participate: " +Integer.toString(n));
-                number_of_non_participate_client.setText("Client not participate: " + Integer.toString(n_client - n));
+                if(n_client == 0) {
+                     temp = "Client participate: " + 0;
+                     temp2 = "Client not participate: " + 0;
+                }else{
+                     temp = "Client participate: " + n;
+                     temp2 = "Client not participate: " + (n_client - n);
+                }
+                number_of_participate_client.setText(temp);
+                number_of_non_participate_client.setText(temp2);
             }
         });
     }
@@ -347,6 +427,7 @@ public class MainActivity extends AppCompatActivity {
             serverThread = null;
         }
     }
+
 
 
     // This method splits two matrices into 4 matrices
@@ -391,5 +472,40 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return result;
+    }
+
+    public void send_matrix_client(String ip, int splitIndex){
+        int[][] clientMatrix1 = hash_map1.get(ip);
+        int[][] clientMatrix2 = hash_map2.get(ip);
+        String message = "";
+
+        client_manage.client_manager.get(client_manage.index(ip)).working = true;
+        message += "IP:" + ip + ",";
+
+        // Copy first matrix
+        for(int rowIndex = 0; rowIndex < clientMatrix1.length; rowIndex++) {
+            for(int columnIndex = 0; columnIndex < clientMatrix1[0].length; columnIndex++) {
+                message += Integer.toString(clientMatrix1[rowIndex][columnIndex]);
+                if (columnIndex != clientMatrix1[0].length-1)
+                    message += "@";
+            }
+            if (rowIndex != clientMatrix1.length-1)
+                message += ".";
+        }
+
+        // Copy second matrix
+        message += ",";
+        for(int rowIndex = 0; rowIndex < clientMatrix2.length; rowIndex++) {
+            for(int columnIndex = 0; columnIndex < clientMatrix2[0].length; columnIndex++) {
+                message += Integer.toString(clientMatrix2[rowIndex][columnIndex]);
+                if (columnIndex != clientMatrix2[0].length-1)
+                    message += "@";
+            }
+            if (rowIndex != clientMatrix2.length-1)
+                message += ".";
+        }
+
+        message += "," + splitIndex;
+        sendMessage(message);
     }
 }
