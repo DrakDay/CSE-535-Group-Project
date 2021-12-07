@@ -51,7 +51,7 @@ public class MainActivity<hashMap> extends AppCompatActivity {
     HashMap<String,int[][] > hash_map1 = new HashMap<String, int[][]>();
     HashMap<String,int[][] > hash_map2 = new HashMap<String, int[][]>();
     HashMap<String,Integer> client_split_index = new HashMap<String,Integer>();
-    HashMap<String, Boolean> client_alive = new HashMap<String, Boolean>();
+
 
     //setting up a server
     private ServerSocket serverSocket;
@@ -92,6 +92,7 @@ public class MainActivity<hashMap> extends AppCompatActivity {
         //listening batter level check
         this.registerReceiver(this.batterylevelReciver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
 
+        //location finder, if you dont want gps, comment out
         loc_finder = new location_finder(this);
         Log.i("TAG",loc_finder.get_latitude() + " " + loc_finder.get_longitude());
         //set up server ip
@@ -343,6 +344,7 @@ public class MainActivity<hashMap> extends AppCompatActivity {
 
             String ip = msg.split(",")[1].split(":")[1];
             client_manage.client_manager.get(client_manage.index(ip)).working = false;
+
             hash_map1.remove(ip);
             hash_map2.remove(ip);
             client_split_index.remove(ip);
@@ -475,6 +477,7 @@ public class MainActivity<hashMap> extends AppCompatActivity {
     }
 
     public void send_matrix_client(String ip, int splitIndex){
+
         int[][] clientMatrix1 = hash_map1.get(ip);
         int[][] clientMatrix2 = hash_map2.get(ip);
         String message = "";

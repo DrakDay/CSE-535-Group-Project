@@ -47,7 +47,7 @@ public class Client_manage {
     public int get_number_of_working_client() {
         int ans = 0;
         for (int i = 0; i < client_manager.size(); i++) {
-            if (client_manager.get(i).participate) {
+            if (client_manager.get(i).working) {
                 ans++;
             }
         }
