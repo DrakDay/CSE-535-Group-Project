@@ -13,6 +13,7 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -38,16 +39,20 @@ import java.util.Arrays;
 import java.util.HashMap;
 
 public class MainActivity<hashMap> extends AppCompatActivity {
+    public static final String MATRIX_RESULT = "MATRIX_RESULT";
 
     // data section
     Client_manage client_manage = new Client_manage();
     location_finder loc_finder;
     private int n_client = 0;
     private int battery_level;
-    private  boolean computation_state = false;
+    private boolean computation_state = false;
 
-
-    public int[][] matrixResult = new int[2][2]; //CHANGE TO MATCH SIZE OF MATRICES USED
+    public int[][] matrixResult = new int[50][50]; //CHANGE TO MATCH SIZE OF MATRICES USED
+    public int[][] backupMatrix1;
+    public int[][] backupMatrix2;
+    public long splitStartTime;
+    public long splitElapsedTime;
     HashMap<String,int[][] > hash_map1 = new HashMap<String, int[][]>();
     HashMap<String,int[][] > hash_map2 = new HashMap<String, int[][]>();
     HashMap<String,Integer> client_split_index = new HashMap<String,Integer>();
@@ -79,7 +84,7 @@ public class MainActivity<hashMap> extends AppCompatActivity {
         number_of_participate_client = findViewById(R.id.client_participate);
         number_of_non_participate_client = findViewById(R.id.clien_not_participate);
         confirm_participation = findViewById(R.id.confirm_participation);
-        start_matrix_computation = findViewById(R.id.send_matrix);
+            start_matrix_computation = findViewById(R.id.send_matrix);
 
         //get permission
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
@@ -120,66 +125,86 @@ public class MainActivity<hashMap> extends AppCompatActivity {
         start_matrix_computation.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                computation_state = true;
-                int[][] matrix1 = MatrixValues.matrix1;
-                int[][] matrix2 = MatrixValues.matrix2;
+                // If there are no participating nodes, perform entire calculation on master node
+                if(client_manage.get_number_of_participate_client() == 0) {
+                    long startTime = System.nanoTime();
+//                    Log.i("TEST", Long.toString(startTime));
 
-                int[][][] splitMatrices = getSplits(matrix1, matrix2);
+//                    for(int i = 0; i < 1000; i++)
+                        matrixResult = multiplyMatrices(MatrixValues.matrix1, MatrixValues.matrix2);
 
-                int splitIndex = 0;
-                String message = "";
+                    double elapsedTime = (System.nanoTime()-startTime);
+                    Log.i("TEST", Double.toString(elapsedTime/1000000));
+                    openMatrixResult();
+                }
+                else {
+                    splitStartTime = System.nanoTime();
 
-                for(client i : client_manage.client_manager){
-                    Log.i("TAG", i.IP );
-                    Log.i("TAG", String.valueOf(i.battery_level));
-                    Log.i("TAG", String.valueOf(i.participate));
-                    Log.i("TAG", String.valueOf(i.latitude) + ' ' + i.longitude);
+                    computation_state = true;
+                    int[][] matrix1 = MatrixValues.matrix1;
+                    int[][] matrix2 = MatrixValues.matrix2;
 
-                    Double lat_diff = Math.abs(loc_finder.get_latitude() - i.latitude);
-                    Double lon_diff = Math.abs(loc_finder.get_longitude() - i.longitude);
-                    // && lat_diff < 0.0005 && lon_diff < 0.0005
+                    int[][][] splitMatrices = getSplits(matrix1, matrix2);
+                    backupMatrix1 = splitMatrices[1];
+                    backupMatrix2 = splitMatrices[2];
 
-                    if (i.participate && i.battery_level >= 20) {
-                        int[][] clientMatrix1 = splitMatrices[splitIndex];
-                        int[][] clientMatrix2 = splitMatrices[2];
+                    int splitIndex = 0;
 
-                        hash_map1.put(i.IP,clientMatrix1);
-                        hash_map2.put(i.IP,clientMatrix2);
-                        client_split_index.put(i.IP,splitIndex);
 
-                        client_manage.client_manager.get(client_manage.index(i.IP)).working = true;
-                        message += "IP:" + i.IP + ",";
+                    for (int clientIndex = 0; clientIndex < 2; clientIndex++) {
+                        client i = client_manage.client_manager.get(clientIndex);
+                        String message = "";
+                        Log.i("TAG", i.IP);
+                        Log.i("TAG", String.valueOf(i.battery_level));
+                        Log.i("TAG", String.valueOf(i.participate));
+                        Log.i("TAG", String.valueOf(i.latitude) + ' ' + i.longitude);
 
-                        // Copy first matrix
-                        for(int rowIndex = 0; rowIndex < clientMatrix1.length; rowIndex++) {
-                            for(int columnIndex = 0; columnIndex < clientMatrix1[0].length; columnIndex++) {
-                                message += Integer.toString(clientMatrix1[rowIndex][columnIndex]);
-                                if (columnIndex != clientMatrix1[0].length-1)
-                                    message += "@";
+                        Double lat_diff = Math.abs(loc_finder.get_latitude() - i.latitude);
+                        Double lon_diff = Math.abs(loc_finder.get_longitude() - i.longitude);
+                        // && lat_diff < 0.0005 && lon_diff < 0.0005
+
+                        if (i.participate && i.battery_level >= 20) {
+                            int[][] clientMatrix1 = splitMatrices[splitIndex];
+                            int[][] clientMatrix2 = splitMatrices[2];
+
+                            hash_map1.put(i.IP, clientMatrix1);
+                            hash_map2.put(i.IP, clientMatrix2);
+                            client_split_index.put(i.IP, splitIndex);
+
+                            client_manage.client_manager.get(client_manage.index(i.IP)).working = true;
+                            message += "IP:" + i.IP + ",";
+
+                            // Copy first matrix
+                            for (int rowIndex = 0; rowIndex < clientMatrix1.length; rowIndex++) {
+                                for (int columnIndex = 0; columnIndex < clientMatrix1[0].length; columnIndex++) {
+                                    message += Integer.toString(clientMatrix1[rowIndex][columnIndex]);
+                                    if (columnIndex != clientMatrix1[0].length - 1)
+                                        message += "@";
+                                }
+                                if (rowIndex != clientMatrix1.length - 1)
+                                    message += ".";
                             }
-                            if (rowIndex != clientMatrix1.length-1)
-                                message += ".";
-                        }
 
-                        // Copy second matrix
-                        message += ",";
-                        for(int rowIndex = 0; rowIndex < clientMatrix2.length; rowIndex++) {
-                            for(int columnIndex = 0; columnIndex < clientMatrix2[0].length; columnIndex++) {
-                                message += Integer.toString(clientMatrix2[rowIndex][columnIndex]);
-                                if (columnIndex != clientMatrix2[0].length-1)
-                                    message += "@";
+                            // Copy second matrix
+                            message += ",";
+                            for (int rowIndex = 0; rowIndex < clientMatrix2.length; rowIndex++) {
+                                for (int columnIndex = 0; columnIndex < clientMatrix2[0].length; columnIndex++) {
+                                    message += Integer.toString(clientMatrix2[rowIndex][columnIndex]);
+                                    if (columnIndex != clientMatrix2[0].length - 1)
+                                        message += "@";
+                                }
+                                if (rowIndex != clientMatrix2.length - 1)
+                                    message += ".";
                             }
-                            if (rowIndex != clientMatrix2.length-1)
-                                message += ".";
+
+                            message += "," + splitIndex;
+
+
+                            sendMessage(message);
+
+                            Log.i("TEST", message);
+                            splitIndex++;
                         }
-
-                        message += "," + splitIndex;
-
-
-                        sendMessage(message);
-
-                        Log.i("TAG", message);
-                        splitIndex++;
                     }
                 }
             }
@@ -355,9 +380,77 @@ public class MainActivity<hashMap> extends AppCompatActivity {
                 computation_state = false;
 
             }
+
+            // Add matrix results to result matrix in master
+            int splitIndex = Integer.valueOf(msg.split(",")[3]);
+            String[] stringMatrixRows = msg.split(",")[2].split("\\.");
+
+            for(int rowIndex = 0; rowIndex < stringMatrixRows.length; rowIndex++) {
+                String[] stringMatrixRow = stringMatrixRows[rowIndex].split("@");
+                for(int columnIndex = 0; columnIndex < stringMatrixRow.length; columnIndex++) {
+                        matrixResult[rowIndex+splitIndex*25][columnIndex] = Integer.parseInt(stringMatrixRow[columnIndex]);
+                }
+            }
+
+            Log.i("TEST", Arrays.toString(matrixResult[splitIndex*25]));
+
+            if(computation_state == false) {
+//                Log.i("TEST", "FINISHED: " + Arrays.deepToString(matrixResult));
+
+                splitElapsedTime = System.nanoTime() - splitStartTime;
+                Log.i("TEST", Double.toString(splitElapsedTime/1000000));
+
+                openMatrixResult();
+            }
         }
+        else if(msg.startsWith("FAILURE")) {
+            if (client_manage.client_manager.size() > 2) {
+                client thirdClient = client_manage.client_manager.get(2);
+                String message = "";
+
+                if (thirdClient.participate && thirdClient.battery_level <= 20) {
+                    message += "IP:" + thirdClient.IP + ",";
+
+                    // Copy first matrix
+                    for (int rowIndex = 0; rowIndex < backupMatrix1.length; rowIndex++) {
+                        for (int columnIndex = 0; columnIndex < backupMatrix1[0].length; columnIndex++) {
+                            message += Integer.toString(backupMatrix1[rowIndex][columnIndex]);
+                            if (columnIndex != backupMatrix1[0].length - 1)
+                                message += "@";
+                        }
+                        if (rowIndex != backupMatrix1.length - 1)
+                            message += ".";
+                    }
+
+                    // Copy second matrix
+                    message += ",";
+                    for (int rowIndex = 0; rowIndex < backupMatrix2.length; rowIndex++) {
+                        for (int columnIndex = 0; columnIndex < backupMatrix2[0].length; columnIndex++) {
+                            message += Integer.toString(backupMatrix2[rowIndex][columnIndex]);
+                            if (columnIndex != backupMatrix2[0].length - 1)
+                                message += "@";
+                        }
+                        if (rowIndex != backupMatrix2.length - 1)
+                            message += ".";
+                    }
+
+                    message += "," + 2;
 
 
+                    sendMessage(message);
+                }
+                else {
+                    masterCompute();
+                }
+            }
+            else {
+                masterCompute();
+            }
+            splitElapsedTime = System.nanoTime() - splitStartTime;
+            Log.i("TEST", Double.toString(splitElapsedTime/1000000));
+
+            openMatrixResult();
+        }
 
     }
 
@@ -511,4 +604,23 @@ public class MainActivity<hashMap> extends AppCompatActivity {
         message += "," + splitIndex;
         sendMessage(message);
     }
+
+    public void openMatrixResult() {
+        Intent intent = new Intent(this, MatrixResultActivity.class);
+        String matrixString = Arrays.deepToString(matrixResult);
+        intent.putExtra(MATRIX_RESULT, matrixString);
+        startActivity(intent);
+    }
+
+    public void masterCompute() {
+        Log.i("TEST", "MASTER COMPUTING");
+        int multResult[][] = multiplyMatrices(backupMatrix1, backupMatrix2);
+
+        for(int rowIndex = 0; rowIndex < multResult.length; rowIndex++){
+            for(int columnIndex = 0; columnIndex < multResult[0].length; columnIndex++){
+                matrixResult[rowIndex+25][columnIndex] = multResult[rowIndex][columnIndex];
+            }
+        }
+    }
+
 }
